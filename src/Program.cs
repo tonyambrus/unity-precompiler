@@ -66,7 +66,7 @@ namespace UnityPrecompiler
             [Option('p', Required = false, Default = "Plugins", HelpText = "Plugin Directory relative to Assets directory in destination project directory")]
             public string PluginsDir { get; set; }
 
-            [Option("defines", Required = false, Default = "", HelpText = "Optional preprocessor defines used to determine class info. Space separated, e.g: \"UNITY_EDITOR UNITY_WSA\") ")]
+            [Option('#', Required = false, Default = "", HelpText = "Optional preprocessor defines used to determine class info. Space separated, e.g: \"UNITY_EDITOR UNITY_WSA\") ")]
             public string Defines { get; set; }
 
             [Option('c', Required = false, Default = "Debug", HelpText = "Configuration to build assemblies (Debug/Release)")]
@@ -111,7 +111,7 @@ namespace UnityPrecompiler
             [Option('d', Required = true, HelpText = "Path to destination project directory")]
             public string DstPath { get; set; }
 
-            [Option("defines", Required = false, Default = "", HelpText = "Optional preprocessor defines used to determine class info. Space separated, e.g: \"UNITY_EDITOR UNITY_WSA\") ")]
+            [Option('#', Required = false, Default = "", HelpText = "Optional preprocessor defines used to determine class info. Space separated, e.g: \"UNITY_EDITOR UNITY_WSA\") ")]
             public string Defines { get; set; }
 
             [Option('c', Required = false, Default = "Debug", HelpText = "Configuration to build assemblies (Debug/Release)")]
