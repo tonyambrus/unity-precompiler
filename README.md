@@ -4,7 +4,7 @@ Takes all the asmdefs in a project, compiles them to dlls, and fixes up assets t
 ## Standard Usage
 You probably just want to run the "all", which combines all the stages.
 
-**UnityPrecompiler.exe compile -s srcPath -d dstPath [-Defines defines] [-c configuration] [-x extensions] [-p pluginDir]**
+**UnityPrecompiler.exe compile -s srcPath -d dstPath [-defines defines] [-c configuration] [-x extensions] [-p pluginDir]**
  - **srcPath:** path to source project directory
  - **dstPath:** path to target project directory
  - **defines:** preprocessor defines used to determine class info
@@ -27,14 +27,15 @@ Excludes *.cs, *.asmdef in target project since we're compiling them, so note th
 
 
 ### Stage 2: Compile
-**UnityPrecompiler.exe compile -s srcPath -d dstPath [-defines defines] [-c configuration]**
+**UnityPrecompiler.exe compile -s srcPath -d dstPath [-defines defines] [-c configuration] [-p pluginDir]**
  - **srcPath:** path to source project directory
  - **dstPath:** path to target project directory
  - **defines:** preprocessor defines used to determine class info. Space separated, e.g.: "UNITY_EDITOR UNITY_WSA"
+ - **pluginDir:** Plugin Directory relative to Assets directory in destination project directory. Defaults to 'Plugins'
  - **configuration:** Configuration to build assemblies (Debug/Release). Defaults to "Debug"
 
 ### Stage 3: Fixup
-**UnityPrecompiler.exe fixup -d dstPath [-x extensions]**
+**UnityPrecompiler.exe fixup -d dstPath [-x extensions] [-p pluginDir]**
  - **dstPath:** path to target project directory
  - **extensions:** optional set of extension to only fix up. Space separated, e.g.: "unity prefab mat asset cubemap ..."
  - **pluginDir:** Plugin Directory relative to Assets directory in destination project directory. Defaults to 'Plugins'
