@@ -3,281 +3,23 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System.Diagnostics.Contracts;
 using System.Text;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using CommandLine;
 using System.Threading.Tasks;
 
-namespace Compiler
+namespace UnityPrecompiler
 {
-    // Taken from http://www.superstarcoders.com/blogs/posts/md4-hash-algorithm-in-c-sharp.aspx
-    // Probably not the best implementation of MD4, but it works.
-    public class MD4 : HashAlgorithm
+    public class Program
     {
-        private uint _a;
-        private uint _b;
-        private uint _c;
-        private uint _d;
-        private uint[] _x;
-        private int _bytesProcessed;
+        public const string localFileID = "11500000";
+        public const string assemblyMapExt = ".map";
 
-        public MD4()
-        {
-            _x = new uint[16];
-
-            Initialize();
-        }
-
-        public override void Initialize()
-        {
-            _a = 0x67452301;
-            _b = 0xefcdab89;
-            _c = 0x98badcfe;
-            _d = 0x10325476;
-
-            _bytesProcessed = 0;
-        }
-
-        protected override void HashCore(byte[] array, int offset, int length)
-        {
-            ProcessMessage(Bytes(array, offset, length));
-        }
-
-        protected override byte[] HashFinal()
-        {
-            try
-            {
-                ProcessMessage(Padding());
-
-                return new[] { _a, _b, _c, _d }.SelectMany(word => Bytes(word)).ToArray();
-            }
-            finally
-            {
-                Initialize();
-            }
-        }
-
-        private void ProcessMessage(IEnumerable<byte> bytes)
-        {
-            foreach (byte b in bytes)
-            {
-                int c = _bytesProcessed & 63;
-                int i = c >> 2;
-                int s = (c & 3) << 3;
-
-                _x[i] = (_x[i] & ~((uint)255 << s)) | ((uint)b << s);
-
-                if (c == 63)
-                {
-                    Process16WordBlock();
-                }
-
-                _bytesProcessed++;
-            }
-        }
-
-        private static IEnumerable<byte> Bytes(byte[] bytes, int offset, int length)
-        {
-            for (int i = offset; i < length; i++)
-            {
-                yield return bytes[i];
-            }
-        }
-
-        private IEnumerable<byte> Bytes(uint word)
-        {
-            yield return (byte)(word & 255);
-            yield return (byte)((word >> 8) & 255);
-            yield return (byte)((word >> 16) & 255);
-            yield return (byte)((word >> 24) & 255);
-        }
-
-        private IEnumerable<byte> Repeat(byte value, int count)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                yield return value;
-            }
-        }
-
-        private IEnumerable<byte> Padding()
-        {
-            return Repeat(128, 1)
-               .Concat(Repeat(0, ((_bytesProcessed + 8) & 0x7fffffc0) + 55 - _bytesProcessed))
-               .Concat(Bytes((uint)_bytesProcessed << 3))
-               .Concat(Repeat(0, 4));
-        }
-
-        private void Process16WordBlock()
-        {
-            uint aa = _a;
-            uint bb = _b;
-            uint cc = _c;
-            uint dd = _d;
-
-            foreach (int k in new[] { 0, 4, 8, 12 })
-            {
-                aa = Round1Operation(aa, bb, cc, dd, _x[k], 3);
-                dd = Round1Operation(dd, aa, bb, cc, _x[k + 1], 7);
-                cc = Round1Operation(cc, dd, aa, bb, _x[k + 2], 11);
-                bb = Round1Operation(bb, cc, dd, aa, _x[k + 3], 19);
-            }
-
-            foreach (int k in new[] { 0, 1, 2, 3 })
-            {
-                aa = Round2Operation(aa, bb, cc, dd, _x[k], 3);
-                dd = Round2Operation(dd, aa, bb, cc, _x[k + 4], 5);
-                cc = Round2Operation(cc, dd, aa, bb, _x[k + 8], 9);
-                bb = Round2Operation(bb, cc, dd, aa, _x[k + 12], 13);
-            }
-
-            foreach (int k in new[] { 0, 2, 1, 3 })
-            {
-                aa = Round3Operation(aa, bb, cc, dd, _x[k], 3);
-                dd = Round3Operation(dd, aa, bb, cc, _x[k + 8], 9);
-                cc = Round3Operation(cc, dd, aa, bb, _x[k + 4], 11);
-                bb = Round3Operation(bb, cc, dd, aa, _x[k + 12], 15);
-            }
-
-            unchecked
-            {
-                _a += aa;
-                _b += bb;
-                _c += cc;
-                _d += dd;
-            }
-        }
-
-        private static uint ROL(uint value, int numberOfBits)
-        {
-            return (value << numberOfBits) | (value >> (32 - numberOfBits));
-        }
-
-        private static uint Round1Operation(uint a, uint b, uint c, uint d, uint xk, int s)
-        {
-            unchecked
-            {
-                return ROL(a + ((b & c) | (~b & d)) + xk, s);
-            }
-        }
-
-        private static uint Round2Operation(uint a, uint b, uint c, uint d, uint xk, int s)
-        {
-            unchecked
-            {
-                return ROL(a + ((b & c) | (b & d) | (c & d)) + xk + 0x5a827999, s);
-            }
-        }
-
-        private static uint Round3Operation(uint a, uint b, uint c, uint d, uint xk, int s)
-        {
-            unchecked
-            {
-                return ROL(a + (b ^ c ^ d) + xk + 0x6ed9eba1, s);
-            }
-        }
-    }
-
-    public static class FileIDUtil
-    {
-        public static int Compute(string typeNamespace, string typeName)
-        {
-            string toBeHashed = "s\0\0\0" + typeNamespace + typeName;
-
-            using (HashAlgorithm hash = new MD4())
-            {
-                byte[] hashed = hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(toBeHashed));
-
-                int result = 0;
-
-                for (int i = 3; i >= 0; --i)
-                {
-                    result <<= 8;
-                    result |= hashed[i];
-                }
-
-                return result;
-            }
-        }
-    }
-
-    class VersionDefine
-    {
-        public string name;
-        public string expression;
-        public string define;
-    }
-
-    class AsmDef
-    {
-        public string name;
-        public List<string> includePlatforms = new List<string>();
-        public List<string> excludePlatforms = new List<string>();
-        public List<string> defineConstraints = new List<string>();
-        public List<VersionDefine> versionDefines = new List<VersionDefine>();
-    }
-
-    class CsFile
-    {
-        public string path;
-        public string originalGuid;
-        public int fileID;
-
-        [JsonIgnore] public CsAssembly assembly;
-    }
-
-    class CsAssembly
-    {
-        public string name;
-        public AsmDef asmdef;
-        public string asmDefPath;
-        public string srcDllPath;
-        public string guid;
-        public List<CsFile> files = new List<CsFile>();
-    }
-
-    public static class ClassDeclarationSyntaxExtensions
-    {
-        public const string NESTED_CLASS_DELIMITER = "+";
-        public const string NAMESPACE_CLASS_DELIMITER = ".";
-
-        public static bool TryGetFullName(this ClassDeclarationSyntax source, out string classNamespace, out string className)
-        {
-            Contract.Requires(null != source);
-
-            var items = new List<string>();
-            var parent = source.Parent;
-            while (parent.IsKind(SyntaxKind.ClassDeclaration))
-            {
-                var parentClass = parent as ClassDeclarationSyntax;
-                Contract.Assert(null != parentClass);
-                items.Add(parentClass.Identifier.Text);
-
-                parent = parent.Parent;
-            }
-
-            var nameSpace = parent as NamespaceDeclarationSyntax;
-
-            classNamespace = nameSpace?.Name?.ToString();
-
-            var sb = new StringBuilder();
-            items.Reverse();
-            items.ForEach(i => { sb.Append(i).Append(NESTED_CLASS_DELIMITER); });
-            sb.Append(source.Identifier.Text);
-
-            className = sb.ToString();
-            return true;
-        }
-    }
-
-    class Program
-    {
+        private static CSharpParseOptions csParseOptions;
         public static HashSet<string> fixupExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             ".unity",
@@ -297,10 +39,6 @@ namespace Compiler
             ".fontsettings"
         };
 
-        public const string localFileID = "11500000";
-        public const string assemblyMapExt = ".map";
-        private static CSharpParseOptions csParseOptions;
-
         public class CopyFlags
         {
             [Option('s', Required = true, HelpText = "Path to source project directory")]
@@ -311,7 +49,7 @@ namespace Compiler
 
             public static void Usage()
             {
-                Console.WriteLine("Usage: Compiler copy srcPath dstPath");
+                Console.WriteLine("Usage: UnityPrecompiler.exe copy srcPath dstPath");
                 Console.WriteLine(" - srcPath: path to source project directory");
                 Console.WriteLine(" - dstPath: path to target project directory");
             }
@@ -333,7 +71,7 @@ namespace Compiler
 
             public static void Usage()
             {
-                Console.WriteLine("Usage: Compiler compile -s srcPath -d dstPath [-Defines defines] [-c configuration]");
+                Console.WriteLine("Usage: UnityPrecompiler.exe compile -s srcPath -d dstPath [-Defines defines] [-c configuration]");
                 Console.WriteLine(" - srcPath: path to source project directory");
                 Console.WriteLine(" - dstPath: path to target project directory");
                 Console.WriteLine(" - defines: preprocessor defines used to determine class info");
@@ -346,14 +84,18 @@ namespace Compiler
             [Option('d', Required = true, HelpText = "Path to destination project directory")]
             public string DstPath { get; set; }
 
+            [Option('p', Required = false, Default = "Plugins", HelpText = "Plugin Directory relative to Assets directory in destination project directory")]
+            public string PluginDir { get; set; }
+
             [Option('x', Required = false, HelpText = "Optional set of extension to only fix up. Space separated, e.g.: \"unity prefab mat asset cubemap ...\"")]
             public string Extensions { get; set; }
 
             public static void Usage()
             {
-                Console.WriteLine("Usage: Compiler fixup -d dstPath [-x extensions]");
+                Console.WriteLine("Usage: UnityPrecompiler.exe fixup -d dstPath [-x extensions]");
                 Console.WriteLine(" - dstPath: path to target project directory");
                 Console.WriteLine(" - extensions: optional set of extension to only fix up. Space separated, e.g.: \"unity prefab mat asset cubemap ...\"");
+                Console.WriteLine(" - pluginDir: Plugin Directory relative to Assets directory in destination project directory");
             }
         }
 
@@ -371,64 +113,73 @@ namespace Compiler
             [Option('c', Required = false, Default = "Debug", HelpText = "Configuration to build assemblies (Debug/Release)")]
             public string Configuration { get; set; }
 
+            [Option('p', Required = false, Default = "Plugins", HelpText = "Plugin Directory relative to Assets directory in destination project directory")]
+            public string PluginDir { get; set; }
+
             [Option('x', Required = false, HelpText = "Optional set of extension to only fix up. Space separated, e.g.: \"unity prefab mat asset cubemap ...\"")]
             public string Extensions { get; set; }
 
-
             public static void Usage()
             {
-                Console.WriteLine("Usage: Compiler compile -s srcPath -d dstPath [-Defines defines] [-c configuration] [-x extensions]");
+                Console.WriteLine("Usage: UnityPrecompiler.exe compile -s srcPath -d dstPath [-Defines defines] [-c configuration] [-x extensions] [-p pluginDir]");
                 Console.WriteLine(" - srcPath: path to source project directory");
                 Console.WriteLine(" - dstPath: path to target project directory");
                 Console.WriteLine(" - defines: preprocessor defines used to determine class info");
                 Console.WriteLine(" - configuration: Configuration to build assemblies (Debug/Release)");
+                Console.WriteLine(" - pluginDir: Plugin Directory relative to Assets directory in destination project directory");
                 Console.WriteLine(" - extensions: optional set of extension to only fix up. Space separated, e.g.: \"unity prefab mat asset cubemap ...\"");
             }
         }
 
         static void Main(string[] args)
         {
-            ProcessAction(args);
-
             try
             {
+                ProcessAction(args);
             }
             catch (Exception e)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine(e.ToString());
-                throw;
+                Console.ForegroundColor = ConsoleColor.Gray;
+                Environment.Exit(1);
             }
         }
 
-        private static void ProcessAction(string[] args)
+        private static object ProcessAction(string[] args)
         {
-            var action = args[0].ToLower();
-            var actionArgs = args.Skip(1);
-            if (action == "copy")
+            if (args.Length > 0)
             {
-                Parser.Default.ParseArguments<CopyFlags>(actionArgs)
-                    .WithNotParsed(flags => CopyFlags.Usage())
-                    .WithParsed(flags => Copy(flags));
+                var action = args[0].ToLower();
+                var actionArgs = args.Skip(1);
+                if (action == "copy")
+                {
+                    return Parser.Default.ParseArguments<CopyFlags>(actionArgs)
+                        .WithNotParsed(flags => CopyFlags.Usage())
+                        .WithParsed(flags => Copy(flags));
+                }
+                else if (action == "compile")
+                {
+                    return Parser.Default.ParseArguments<CompileFlags>(actionArgs)
+                        .WithNotParsed(flags => CompileFlags.Usage())
+                        .WithParsed(flags => Compile(flags));
+                }
+                else if (action == "fixup")
+                {
+                    return Parser.Default.ParseArguments<FixupFlags>(actionArgs)
+                        .WithNotParsed(flags => FixupFlags.Usage())
+                        .WithParsed(flags => Fixup(flags));
+                }
+                else if (action == "all")
+                {
+                    return Parser.Default.ParseArguments<AllFlags>(actionArgs)
+                        .WithNotParsed(flags => AllFlags.Usage())
+                        .WithParsed(flags => All(flags));
+                }
             }
-            else if (action == "compile")
-            {
-                Parser.Default.ParseArguments<CompileFlags>(actionArgs)
-                    .WithNotParsed(flags => CompileFlags.Usage())
-                    .WithParsed(flags => Compile(flags));
-            }
-            else if (action == "fixup")
-            {
-                Parser.Default.ParseArguments<FixupFlags>(actionArgs)
-                    .WithNotParsed(flags => FixupFlags.Usage())
-                    .WithParsed(flags => Fixup(flags));
-            }
-            else if (action == "all")
-            {
-                Parser.Default.ParseArguments<AllFlags>(actionArgs)
-                    .WithNotParsed(flags => AllFlags.Usage())
-                    .WithParsed(flags => All(flags));
-            }
+
+            Console.WriteLine("Usage: UnityPrecompiler.exe [all|copy|compile|fixup] -?");
+            return null;
         }
 
         static void All(AllFlags flags)
@@ -450,7 +201,8 @@ namespace Compiler
             var fixupFlags = new FixupFlags
             {
                 DstPath = flags.DstPath,
-                Extensions = flags.Extensions
+                Extensions = flags.Extensions,
+                PluginDir = flags.PluginDir
             };
 
             var a = Task.Run(() => CompileSolution(compileFlags));
@@ -483,11 +235,16 @@ namespace Compiler
 
 
             var dstAssetsDir = Path.Combine(dstDir, "Assets");
+            var dstPluginsDir = Path.Combine(dstAssetsDir, flags.PluginDir?.Length > 0 ? flags.PluginDir : "Plugins");
 
-            var dstPluginsDir = Path.Combine(dstAssetsDir, "Plugins");
+            if (!Directory.Exists(dstAssetsDir))
+            {
+                throw new Exception("First argument must be the target project directory (should ");
+            }
+
             if (!Directory.Exists(dstPluginsDir))
             {
-                throw new Exception("first argument must be the target project directory (should ");
+                Directory.CreateDirectory(dstPluginsDir);
             }
 
             var csassemblies = Directory
@@ -550,6 +307,7 @@ namespace Compiler
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("Fixup Complete.");
             Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Gray;
         }
 
         static void Copy(CopyFlags flags)
