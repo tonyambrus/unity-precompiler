@@ -66,10 +66,13 @@ namespace UnityPrecompiler
             Console.WriteLine();
         }
 
+        // e.g. git can't handle the "\\?\" prefix
+        private string StripLongPathPrefix(string path) => path = path.TrimStart('\\', '?');
+
         private bool IsPathIgnored(string path)
         {
             // git can't handle the "\\?\" prefix
-            path = path.TrimStart('\\','?');
+            path = StripLongPathPrefix(path);
 
             var ignored = ProcessUtil
                 .ExecuteReadOutput("git", $"check-ignore --no-index \"{path}\"", flags.SrcPath)
@@ -218,7 +221,7 @@ namespace UnityPrecompiler
             }
         }
 
-        private Process CreateMdb(string dstDllPath) => ProcessUtil.StartHidden("pdb2mdb.exe", dstDllPath);
+        private Process CreateMdb(string dstDllPath) => ProcessUtil.StartHidden("pdb2mdb.exe", StripLongPathPrefix(dstDllPath));
 
         private string GetMsbuildPath()
         {

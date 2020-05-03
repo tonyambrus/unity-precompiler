@@ -3,11 +3,8 @@ using System;
 
 namespace UnityPrecompiler
 {
-    public class Flags
+    public class BaseFlags
     {
-        [Option('s', Required = true, HelpText = "Path to source project directory")]
-        public string SrcPath { get; set; }
-
         [Option('d', Required = true, HelpText = "Path to destination project directory")]
         public string DstPath { get; set; }
 
@@ -39,6 +36,24 @@ namespace UnityPrecompiler
         public bool CheckGitIgnore { get; set; }
 
         public static void Usage()
+        {
+            Console.WriteLine("Usage: UnityPrecompiler.exe compile -s srcPath -d dstPath [-Defines defines] [-c configuration] [-x extensions] [-p pluginDir] [-CopyProjectSettings bool] [-CopyPackages bool] [-FilterDir filterDir]");
+            Console.WriteLine(" - srcPath: path to source project directory");
+            Console.WriteLine(" - dstPath: path to target project directory");
+            Console.WriteLine(" - defines: preprocessor defines used to determine class info");
+            Console.WriteLine(" - configuration: Configuration to build assemblies (Debug/Release)");
+            Console.WriteLine(" - pluginDir: Plugin Directory relative to Assets directory in destination project directory");
+            Console.WriteLine(" - extensions: optional set of extension to only fix up. Space separated, e.g.: \"unity prefab mat asset cubemap ...\"");
+            Console.WriteLine(" - filterDir: Optional subdirectory of Assets to filter to");
+        }
+    }
+
+    public class Flags : BaseFlags
+    {
+        [Option('s', Required = true, HelpText = "Path to source project directory")]
+        public string SrcPath { get; set; }
+
+        public new static void Usage()
         {
             Console.WriteLine("Usage: UnityPrecompiler.exe compile -s srcPath -d dstPath [-Defines defines] [-c configuration] [-x extensions] [-p pluginDir] [-CopyProjectSettings bool] [-CopyPackages bool] [-FilterDir filterDir]");
             Console.WriteLine(" - srcPath: path to source project directory");

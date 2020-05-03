@@ -9,7 +9,7 @@ namespace UnityPrecompiler
 {
     public class Fixup
     {
-        public static void Execute(Flags flags)
+        public static void Execute(BaseFlags flags)
         {
             var dstDir = flags.DstPath;
             var exts = (flags.Extensions?.Length > 0) ? flags.Extensions.Split(' ').Select(e => $".{e}") : Constants.FixupExtensions;

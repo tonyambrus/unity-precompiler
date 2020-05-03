@@ -42,8 +42,8 @@ namespace UnityPrecompiler
                 }
                 else if (action == "fixup")
                 {
-                    return Parser.Default.ParseArguments<Flags>(actionArgs)
-                        .WithNotParsed(flags => Flags.Usage())
+                    return Parser.Default.ParseArguments<BaseFlags>(actionArgs)
+                        .WithNotParsed(flags => BaseFlags.Usage())
                         .WithParsed(flags => Fixup.Execute(flags));
                 }
                 else if (action == "all")
