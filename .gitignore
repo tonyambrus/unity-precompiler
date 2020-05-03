@@ -60,3 +60,4 @@ crashlytics-build.properties
 
 /bin/Debug
 /packages
+/nupkg

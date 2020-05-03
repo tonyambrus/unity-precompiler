@@ -1,16 +1,23 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 
 namespace UnityPrecompiler
 {
     public static class ProcessUtil
     {
-        public static Process StartHidden(string filename, string args)
+        public static Process StartHidden(string filename, string args, string startDir = null)
         {
+            if (startDir == null)
+            {
+                startDir = Environment.CurrentDirectory;
+            }
+
             var process = new Process();
             var startinfo = new ProcessStartInfo(filename, args)
             {
-                WindowStyle = ProcessWindowStyle.Hidden
+                WindowStyle = ProcessWindowStyle.Hidden,
+                WorkingDirectory = startDir
             };
             process.StartInfo = startinfo;
             process.Start();
