@@ -35,6 +35,9 @@ namespace UnityPrecompiler
         [Option(Required = false, Default = true, HelpText = "Copies Packages directory (including manifest.json) to target")]
         public bool CopyPackages { get; set; }
 
+        [Option(Required = false, Default = true, HelpText = "Checks that asmdefs are not part of the .gitignore")]
+        public bool CheckGitIgnore { get; set; }
+
         public static void Usage()
         {
             Console.WriteLine("Usage: UnityPrecompiler.exe compile -s srcPath -d dstPath [-Defines defines] [-c configuration] [-x extensions] [-p pluginDir] [-CopyProjectSettings bool] [-CopyPackages bool] [-FilterDir filterDir]");

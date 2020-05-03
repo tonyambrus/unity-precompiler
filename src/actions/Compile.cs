@@ -66,13 +66,37 @@ namespace UnityPrecompiler
             Console.WriteLine();
         }
 
+        private bool IsPathIgnored(string path)
+        {
+            // git can't handle the "\\?\" prefix
+            path = path.TrimStart('\\','?');
+
+            var ignored = ProcessUtil
+                .ExecuteReadOutput("git", $"check-ignore --no-index \"{path}\"", flags.SrcPath)
+                .Any(line => line?.Length > 0);
+
+            if (ignored)
+            {
+                Console.WriteLine($"Ignoring .gitignored asmdef at {path}");
+            }
+
+            return ignored;
+        }
+
         private List<CsAssembly> GetAssemblies()
         {
             if (assemblies == null)
             {
-                assemblies = Directory
+                var set = (IEnumerable<string>)Directory
                     .GetFiles(srcPath, "*.asmdef", SearchOption.AllDirectories)
-                    .AsParallel()
+                    .AsParallel();
+
+                if (flags.CheckGitIgnore)
+                {
+                    set = set.Where(srcPath => !IsPathIgnored(srcPath));
+                }
+
+                assemblies = set
                     .Select(asmdefPath => GatherAssemblyInfo(asmdefPath, srcAssembliesDir))
                     .ToList();
             }
