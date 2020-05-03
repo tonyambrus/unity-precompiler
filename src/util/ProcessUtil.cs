@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 
 namespace UnityPrecompiler
 {
@@ -10,7 +11,7 @@ namespace UnityPrecompiler
         {
             if (startDir == null)
             {
-                startDir = Environment.CurrentDirectory;
+                startDir = Path.GetDirectoryName(Environment.GetCommandLineArgs()[0]);
             }
 
             var process = new Process();

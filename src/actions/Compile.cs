@@ -46,10 +46,6 @@ namespace UnityPrecompiler
             }
 
             srcAssembliesDir = Path.Combine(srcProjectDir, $"Temp\\bin\\{configuration}");
-            if (!Directory.Exists(srcAssembliesDir))
-            {
-                throw new Exception("Precompiled assemblies not available. Open Unity of source project dir to get them compiled first.");
-            }
         }
 
         public void Execute()
@@ -214,36 +210,6 @@ namespace UnityPrecompiler
             return msbuildPath;
         }
 
-        private void CompileSolution()
-        {
-            var srcPath = flags.SrcPath;
-            var configuration = flags.Configuration;
-
-            var slnPaths = Directory.GetFiles(srcPath, "*.sln");
-            if (slnPaths.Length == 0)
-            {
-                throw new Exception("Don't have a solution to build from. Please open the solution from Unity first");
-            }
-            else if (slnPaths.Length > 1)
-            {
-                throw new Exception("Multiple solutions found in the project dir. There should only be one.");
-            }
-
-            Console.WriteLine($"Starting compilation...");
-
-            var msbuildPath = GetMsbuildPath();
-            var slnPath = slnPaths[0];
-            var build = ProcessUtil.StartHidden(msbuildPath, $"\"{slnPath}\" /t:Build /p:Configuration={configuration} /fl");
-            build.WaitForExit();
-            if (build.ExitCode != 0)
-            {
-                var logFile = Path.Combine(Environment.CurrentDirectory, "msbuild.log");
-                throw new Exception($"Build process failed for {slnPath}.\nSee {logFile} for errors\n");
-            }
-
-            Console.WriteLine($"Compilation complete.");
-        }
-
         internal void CompileProjects()
         {
             var assemblies = GetAssemblies();
@@ -259,13 +225,12 @@ namespace UnityPrecompiler
                     throw new Exception($"Can't find {csprojPath}");
                 }
 
-                var logFile = $"{assembly.name}.log";
-                var build = ProcessUtil.StartHidden(msbuildPath, $"\"{csprojPath}\" /t:Build /p:Configuration={configuration} /fl /flp:logfile={logFile}", workingDir);
+                var logPath = Path.Combine(workingDir, $"{assembly.name}.log");
+                var build = ProcessUtil.StartHidden(msbuildPath, $"\"{csprojPath}\" /t:Build /p:Configuration={configuration} /fl \"/flp:logfile={logPath}\"", workingDir);
                 build.WaitForExit();
 
                 if (build.ExitCode != 0)
                 {
-                    var logPath = Path.Combine(workingDir, logFile);
                     throw new Exception($"Build process failed for {csprojPath}.\nLogfile: {logPath}");
                 }
 
