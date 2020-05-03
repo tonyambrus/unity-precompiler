@@ -63,6 +63,9 @@ namespace UnityPrecompiler
             [Option('d', Required = true, HelpText = "Path to destination project directory")]
             public string DstPath { get; set; }
 
+            [Option('p', Required = false, Default = "Plugins", HelpText = "Plugin Directory relative to Assets directory in destination project directory")]
+            public string PluginsDir { get; set; }
+
             [Option("defines", Required = false, Default = "", HelpText = "Optional preprocessor defines used to determine class info. Space separated, e.g: \"UNITY_EDITOR UNITY_WSA\") ")]
             public string Defines { get; set; }
 
@@ -71,9 +74,10 @@ namespace UnityPrecompiler
 
             public static void Usage()
             {
-                Console.WriteLine("Usage: UnityPrecompiler.exe compile -s srcPath -d dstPath [-Defines defines] [-c configuration]");
+                Console.WriteLine("Usage: UnityPrecompiler.exe compile -s srcPath -d dstPath [-Defines defines] [-c configuration] [-p pluginDir]");
                 Console.WriteLine(" - srcPath: path to source project directory");
                 Console.WriteLine(" - dstPath: path to target project directory");
+                Console.WriteLine(" - pluginDir: Plugin Directory relative to Assets directory in destination project directory");
                 Console.WriteLine(" - defines: preprocessor defines used to determine class info");
                 Console.WriteLine(" - configuration: Configuration to build assemblies (Debug/Release)");
             }
@@ -92,7 +96,7 @@ namespace UnityPrecompiler
 
             public static void Usage()
             {
-                Console.WriteLine("Usage: UnityPrecompiler.exe fixup -d dstPath [-x extensions]");
+                Console.WriteLine("Usage: UnityPrecompiler.exe fixup -d dstPath [-x extensions] [-p pluginDir]");
                 Console.WriteLine(" - dstPath: path to target project directory");
                 Console.WriteLine(" - extensions: optional set of extension to only fix up. Space separated, e.g.: \"unity prefab mat asset cubemap ...\"");
                 Console.WriteLine(" - pluginDir: Plugin Directory relative to Assets directory in destination project directory");
@@ -195,7 +199,8 @@ namespace UnityPrecompiler
                 DstPath = flags.DstPath,
                 SrcPath = flags.SrcPath,
                 Configuration = flags.Configuration,
-                Defines = flags.Defines
+                Defines = flags.Defines,
+                PluginsDir = flags.PluginDir
             };
 
             var fixupFlags = new FixupFlags
@@ -378,16 +383,10 @@ namespace UnityPrecompiler
 
             csParseOptions = CSharpParseOptions.Default.WithPreprocessorSymbols(defines);
 
-            var dstPluginsDir = Path.Combine(dstDir, "Assets\\Plugins");
+            var dstPluginsDir = Path.Combine(dstDir, "Assets", flags.PluginsDir);
             if (!Directory.Exists(dstPluginsDir))
             {
                 Directory.CreateDirectory(dstPluginsDir);
-            }
-
-            var dstEditorPluginsDir = Path.Combine(dstPluginsDir, "Editor");
-            if (!Directory.Exists(dstEditorPluginsDir))
-            {
-                Directory.CreateDirectory(dstEditorPluginsDir);
             }
 
             var srcAssetsDir = Path.Combine(srcProjectDir, "Assets");
@@ -475,13 +474,8 @@ namespace UnityPrecompiler
             // write out assemblies
             assemblies.ForEach(assembly =>
             {
-                // TODO: get from asmdef
-                //var isEditorPlugin = assembly.name.IndexOf("Editor", StringComparison.OrdinalIgnoreCase) != -1;
-                //var pluginDir = isEditorPlugin ? dstEditorPluginsDir : dstPluginsDir;
-                var pluginDir = dstPluginsDir;
-
                 // Copy assembly over
-                var dstAssemblyPath = Path.Combine(pluginDir, assembly.name + ".dll");
+                var dstAssemblyPath = Path.Combine(dstPluginsDir, assembly.name + ".dll");
                 File.Copy(assembly.srcDllPath, dstAssemblyPath, overwrite: true);
 
                 // Create meta file
