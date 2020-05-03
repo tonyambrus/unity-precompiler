@@ -4,13 +4,13 @@ Takes all the asmdefs in a project, compiles them to dlls, and fixes up assets t
 ## Standard Usage
 You probably just want to run the "all", which combines all the stages.
 
-**UnityPrecompiler.exe compile -s srcPath -d dstPath [-defines defines] [-c configuration] [-x extensions] [-p pluginDir]**
+**UnityPrecompiler.exe all -s srcPath -d dstPath [-# defines] [-c configuration] [-x extensions] [-p pluginDir]**
  - **srcPath:** path to source project directory
  - **dstPath:** path to target project directory
- - **defines:** preprocessor defines used to determine class info
+ - **defines:** Preprocessor defines used to determine class info. Space separated, e.g.: "UNITY_EDITOR UNITY_WSA"
  - **configuration:** Configuration to build assemblies (Debug/Release). Defaults to "Debug"
- - **pluginDir:** Plugin Directory relative to Assets directory in destination project directory. Defaults to 'Plugins'
- - **extensions:** optional set of extension to only fix up. Space separated, e.g.: "unity prefab mat asset cubemap ..."
+ - **pluginDir:** Optional plugin Directory relative to Assets directory in destination project directory. Defaults to 'Plugins'
+ - **extensions:** Optional set of extension to only fix up. Space separated, e.g.: "unity prefab mat asset cubemap ..."
 
 Example:
 
@@ -27,7 +27,9 @@ Excludes *.cs, *.asmdef in target project since we're compiling them, so note th
 
 
 ### Stage 2: Compile
-**UnityPrecompiler.exe compile -s srcPath -d dstPath [-defines defines] [-c configuration] [-p pluginDir]**
+Compiles the dlls with pdbs & mdbs, and produces .map files that hold the information to map script guids to their new locations in the dlls. Also tracks and applies scriptExecutionOrder.
+
+**UnityPrecompiler.exe compile -s srcPath -d dstPath [-# defines] [-c configuration] [-p pluginDir]**
  - **srcPath:** path to source project directory
  - **dstPath:** path to target project directory
  - **defines:** preprocessor defines used to determine class info. Space separated, e.g.: "UNITY_EDITOR UNITY_WSA"
@@ -35,6 +37,8 @@ Excludes *.cs, *.asmdef in target project since we're compiling them, so note th
  - **configuration:** Configuration to build assemblies (Debug/Release). Defaults to "Debug"
 
 ### Stage 3: Fixup
+Fixes up all the assets in the dstPath project using the .map information in pluginDir.
+
 **UnityPrecompiler.exe fixup -d dstPath [-x extensions] [-p pluginDir]**
  - **dstPath:** path to target project directory
  - **extensions:** optional set of extension to only fix up. Space separated, e.g.: "unity prefab mat asset cubemap ..."
