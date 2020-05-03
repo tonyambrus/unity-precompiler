@@ -1,15 +1,15 @@
-﻿using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+﻿using CommandLine;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System.Text;
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
-using CommandLine;
 using System.Threading.Tasks;
 
 namespace UnityPrecompiler
@@ -342,19 +342,28 @@ namespace UnityPrecompiler
             Console.WriteLine($"  - srcPath: {srcAssetsDir}");
             Console.WriteLine($"  - dstPath: {dstAssetsDir}");
             Console.WriteLine();
-            Console.Write($"Starting copy...");
+            Console.WriteLine($"Starting copy...");
 
-            var a = Process.Start("robocopy", $"\"{srcAssetsDir}\" \"{dstAssetsDir}\" /XF *.cs *.cs.meta *.asmdef *.asmdef.meta /S /PURGE");
-            var b = hasProjectSettingsDir ? Process.Start("robocopy", $"\"{srcProjectSettingsDir}\" \"{dstProjectSettingsDir}\" /MIR") : null;
-            var c = hasPackagesDir ? Process.Start("robocopy", $"\"{srcPackagesDir}\" \"{dstPackagesDir}\" /MIR") : null;
+            using (var wait = new WaitForProcesses())
+            {
+                wait.Add(MirrorAssets(srcAssetsDir, dstAssetsDir));
 
-            a?.WaitForExit();
-            b?.WaitForExit();
-            c?.WaitForExit();
+                if (hasProjectSettingsDir)
+                {
+                    wait.Add(MirrorDirectory(srcProjectSettingsDir, dstProjectSettingsDir));
+                }
+
+                if (hasPackagesDir)
+                {
+                    wait.Add(MirrorDirectory(srcPackagesDir, dstPackagesDir));
+                }
+            }
 
             Console.WriteLine($"Copy Complete.");
-            Console.WriteLine();
         }
+
+        private static Process MirrorAssets(string from, string to) => ProcessUtil.StartHidden("robocopy", $"\"{from}\" \"{to}\" /XF *.cs *.cs.meta *.asmdef *.asmdef.meta /MIR");
+        private static Process MirrorDirectory(string from, string to) => ProcessUtil.StartHidden("robocopy", $"\"{from}\" \"{to}\" /MIR");
 
         static void Compile(CompileFlags flags)
         {
@@ -403,6 +412,7 @@ namespace UnityPrecompiler
 
             var assemblies = Directory
                 .GetFiles(srcAssetsDir, "*.asmdef", SearchOption.AllDirectories)
+                .AsParallel()
                 .Select(asmdefPath => ProcessAssembly(asmdefPath, srcAssembliesDir))
                 .ToList();
 
@@ -425,13 +435,15 @@ namespace UnityPrecompiler
                 }
             }
 
+            var lockObj = new object();
+
             // calculate fileIds/guids
-            assemblies.ForEach(assembly =>
+            Parallel.ForEach(assemblies, assembly =>
             {
                 var hasWarnings = false;
 
-                Console.ForegroundColor = ConsoleColor.Gray;
-                Console.Write($"Processing {assembly.name}...");
+                var sb = new StringBuilder();
+                sb.Append($"Processing {assembly.name}...");
 
                 assembly.files.ForEach(file =>
                 {
@@ -451,10 +463,14 @@ namespace UnityPrecompiler
                     var csName = Path.GetFileNameWithoutExtension(csPath);
                     var guid = csdata[1].Split(':')[1].TrimStart();
 
-                    if (!TryGetClassFullName(csPath, csName, ref hasWarnings, out var csClassNamespace, out var csClassName))
+                    if (!TryGetClassFullName(csPath, csName, sb, ref hasWarnings, out var csClassNamespace, out var csClassName))
                     {
                         return;
                     }
+
+                    file.className = csClassName;
+                    file.classNamespace = csClassNamespace;
+                    file.classFullName = (csClassNamespace?.Length > 0) ? $"{csClassNamespace}.{csClassName}" : csClassName;
 
                     file.originalGuid = guid;
                     file.fileID = FileIDUtil.Compute(csClassNamespace, csClassName);
@@ -465,46 +481,46 @@ namespace UnityPrecompiler
 
                 if (!hasWarnings)
                 {
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine("OK");
-                    Console.ForegroundColor = ConsoleColor.Gray;
+                    sb.AppendLine("OK");
+                }
+
+                lock (lockObj)
+                {
+                    Console.ForegroundColor = hasWarnings ? ConsoleColor.Yellow : ConsoleColor.Gray;
+                    Console.Write(sb.ToString());
                 }
             });
 
-            // write out assemblies
-            assemblies.ForEach(assembly =>
+            using (var procs = new WaitForProcesses())
             {
-                // Copy assembly over
-                var dstAssemblyPath = Path.Combine(dstPluginsDir, assembly.name + ".dll");
-                File.Copy(assembly.srcDllPath, dstAssemblyPath, overwrite: true);
+                // write out assemblies
+                Parallel.ForEach(assemblies, assembly =>
+                {
+                    // Copy assembly over
+                    var dstDllPath = Path.Combine(dstPluginsDir, assembly.name + ".dll");
+                    File.Copy(assembly.srcDllPath, dstDllPath, overwrite: true);
 
-                // Create meta file
-                var dstAssemblyMetaPath = dstAssemblyPath + ".meta";
-                WriteAssemblyMetaFile(dstAssemblyMetaPath, assembly);
+                    // Copy pdb
+                    var dstPdbPath = Path.ChangeExtension(dstDllPath, ".pdb");
+                    var srcPdbPath = Path.ChangeExtension(assembly.srcDllPath, ".pdb");
+                    File.Copy(srcPdbPath, dstPdbPath, overwrite: true);
 
-                // Write map data
-                var dstAssemblyInfoPath = Path.Combine(dstPluginsDir, assembly.name + assemblyMapExt);
-                File.WriteAllText(dstAssemblyInfoPath, JsonConvert.SerializeObject(assembly, Formatting.Indented));
-            });
+                    // Generate mdb from pdb
+                    var mdbProcess = CreateMdb(dstDllPath);
+                    procs.Add(mdbProcess);
 
+                    // Create meta file
+                    var dstAssemblyMetaPath = dstDllPath + ".meta";
+                    WriteAssemblyMetaFile(dstAssemblyMetaPath, assembly);
+
+                    // Write map data
+                    var dstAssemblyInfoPath = Path.Combine(dstPluginsDir, assembly.name + assemblyMapExt);
+                    File.WriteAllText(dstAssemblyInfoPath, JsonConvert.SerializeObject(assembly, Formatting.Indented));
+                });
+            }
         }
 
-        private static List<string> Execute(string filename, string args)
-        {
-            var list = new List<string>();
-            var process = new Process();
-            var startinfo = new ProcessStartInfo(filename, args)
-            {
-                RedirectStandardOutput = true,
-                UseShellExecute = false
-            };
-            process.StartInfo = startinfo;
-            process.OutputDataReceived += (_, a) => list.Add(a.Data);
-            process.Start();
-            process.BeginOutputReadLine();
-            process.WaitForExit();
-            return list;
-        }
+        private static Process CreateMdb(string dstDllPath) => ProcessUtil.StartHidden("pdb2mdb.exe", dstDllPath);
 
         private static void CompileSolution(CompileFlags flags)
         {
@@ -521,21 +537,24 @@ namespace UnityPrecompiler
                 throw new Exception("Multiple solutions found in the project dir. There should only be one.");
             }
 
-            var msbuildPath = Execute("vswhere.exe", @"-latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe")
+            var msbuildPath = ProcessUtil.ExecuteReadOutput("vswhere.exe", @"-latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe")
                 .FirstOrDefault();
             if (msbuildPath == null)
             {
                 throw new Exception("Failed to find msbuild");
             }
 
-            var slnPath = slnPaths[0];
-            var build = Process.Start(msbuildPath, $"\"{slnPath}\" /t:Build /p:Configuration={configuration}");
-            build.WaitForExit();
+            Console.WriteLine($"Starting compilation...");
 
-            //if (build.ExitCode != 0)
-            //{
-            //    throw new Exception($"Build process failed for {slnPath}");
-            //}
+            var slnPath = slnPaths[0];
+            var build = ProcessUtil.StartHidden(msbuildPath, $"\"{slnPath}\" /t:Build /p:Configuration={configuration}");
+            build.WaitForExit();
+            if (build.ExitCode != 0)
+            {
+                throw new Exception($"Build process failed for {slnPath}\n");
+            }
+
+            Console.WriteLine($"Compilation complete.");
         }
 
         private static CsAssembly ProcessAssembly(string asmdefPath, string srcAssembliesDir)
@@ -561,13 +580,41 @@ namespace UnityPrecompiler
 
             assembly.files = Directory
                 .GetFiles(asmdefDir, "*.cs", SearchOption.AllDirectories)
-                .Select(csPath => new CsFile { path = csPath })
+                .Select(csPath => ProcessCsFile(csPath))
                 .ToList();
 
             return assembly;
         }
 
-        private static bool TryGetClassFullName(string csPath, string csName, ref bool hasWarnings, out string csClassNamespace, out string csClassName)
+        private static CsFile ProcessCsFile(string csPath)
+        {
+            var csMetaPath = csPath + ".meta";
+            if (!File.Exists(csMetaPath))
+            {
+                throw new Exception($"Can't find meta file for {csPath}");
+
+            }
+
+            var file = new CsFile { path = csPath };
+
+            foreach (var line in File.ReadLines(csMetaPath))
+            {
+                if (line.StartsWith("  executionOrder:"))
+                {
+                    var value = line.Split(':')[1].Trim();
+                    if (!int.TryParse(value, out file.executionOrder))
+                    {
+                        throw new Exception($"ExecutionOrder in {csPath} is expected to be an integer, was '{value}'");
+                    }
+
+                    break;
+                }
+            }
+
+            return file;
+        }
+
+        private static bool TryGetClassFullName(string csPath, string csName, StringBuilder sb, ref bool hasWarnings, out string csClassNamespace, out string csClassName)
         {
             var csTree = CSharpSyntaxTree.ParseText(File.ReadAllText(csPath), csParseOptions);
             var csRoot = (CompilationUnitSyntax)csTree.GetRoot();
@@ -589,12 +636,10 @@ namespace UnityPrecompiler
                 {
                     if (!hasWarnings)
                     {
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.WriteLine("OK With Warnings (Maybe you didn't pass in the right defines?)");
+                        sb.AppendLine("OK With Warnings (Maybe you didn't pass in the right defines?)");
                         hasWarnings = true;
                     }
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine($"  - Skipping classless file: {csPath}");
+                    sb.AppendLine($"  - Skipping classless file: {csPath}");
                 }
 
                 csClassNamespace = null;
@@ -614,7 +659,20 @@ namespace UnityPrecompiler
             sb.AppendLine("  externalObjects: {}");
             sb.AppendLine("  serializedVersion: 2");
             sb.AppendLine("  iconMap: {}");
-            sb.AppendLine("  executionOrder: {}");
+
+            var modifiedExecutionFiles = assembly.files.Where(file => file.executionOrder != 0).ToArray();
+            if (modifiedExecutionFiles.Length > 0)
+            {
+                sb.AppendLine("  executionOrder:");
+                foreach (var file in modifiedExecutionFiles)
+                {
+                    sb.AppendLine($"    {file.classFullName}: {file.executionOrder}");
+                }
+            }
+            else
+            {
+                sb.AppendLine("  executionOrder: {}");
+            }
 
             var defines = assembly.asmdef.versionDefines.Select(d => d.define)
                 .Concat(assembly.asmdef.defineConstraints);
