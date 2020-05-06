@@ -1,6 +1,11 @@
 # unity-precompiler
 Takes all the asmdefs in a project, compiles them to dlls, and fixes up assets to point at the updated guid/fileIDs. Useful if you have lots of asmdefs and it's slowing down your iteration speed.
 
+## A Warning about Preprocessor Defines
+Please note that the compilation uses the supplied (optional) preprocessor defines. This means that you should avoid precompiling sections of code that express differently under different platforms (e.g. #if UNITY_WSA ... #else ... #endif).
+
+While we could emit multiple versions of dlls for different platforms, these dlls would (by definition) have different guids. However, assets can only point to a single guid. Therefore, general guidance is to factor out platform dependent code into single asmdefs, set the platform flags in the Asmdef inspector, and then precompile them. Likewise don't have #if UNITY_EDITOR expressions, instead separate them out into editor assemblies.
+
 ## Standard Usage
 You probably just want to run the "all", which combines all the stages.
 
